@@ -1,0 +1,175 @@
+<ui>
+  <insertable-object>
+    <object name="scanner_page" type="Adw.Bin">
+      <property name="scanner_state" type="int">0</property>
+      <property name="is_outside_sandbox" type="bool">false</property>
+      <property name="in_mobile_screen" type="bool">false</property>
+      <children>
+        <box orientation="vertical">
+          <child>
+            <object type="Adw.ViewStack" name="scan_source_viewstack">
+              <property name="vexpand">true</property>
+              <children>
+                <!-- Webcam Source -->
+                <child name="webcam" type="Adw.Bin">
+                  <property name="vexpand">true</property>
+                  <children>
+                    <box orientation="vertical">
+                      <child>
+                        <object type="Adw.MultiLayoutView" name="webcam_multilayout">
+                          <property name="vexpand">true</property>
+                          <children>
+                            <child name="available" type="Adw.Bin">
+                              <children>
+                                <box orientation="vertical">
+                                  <child>
+                                    <object type="Gtk.Picture" name="webcam_display">
+                                      <property name="vexpand">true</property>
+                                      <property name="content-fit">cover</property>
+                                    </object>
+                                  </child>
+                                  <child>
+                                    <box orientation="horizontal">
+                                      <child>
+                                        <object type="Gtk.DropDown" name="webcam_dropdown"/>
+                                      </child>
+                                      <child>
+                                        <object type="Gtk.Switch" name="mirror_switch">
+                                          <property name="halign">end</property>
+                                        </object>
+                                      </child>
+                                    </box>
+                                  </child>
+                                  <child>
+                                    <box name="box_playpause">
+                                      <child>
+                                        <object type="Gtk.ToggleButton" name="btn_pause" label="Pause"/>
+                                      </child>
+                                    </box>
+                                  </child>
+                                </box>
+                              </children>
+                            </child>
+                            <child name="requesting" type="Adw.Bin">
+                              <children>
+                                <box orientation="vertical" valign="center">
+                                  <child>
+                                    <object type="Gtk.Label">
+                                      <property name="label">Requesting camera access...</property>
+                                    </object>
+                                  </child>
+                                </box>
+                              </children>
+                            </child>
+                            <child name="unavailable" type="Adw.Bin">
+                              <children>
+                                <box orientation="vertical" valign="center">
+                                  <child>
+                                    <object type="Gtk.Label">
+                                      <property name="label">No camera available</property>
+                                    </object>
+                                  </child>
+                                </box>
+                              </children>
+                            </child>
+                          </children>
+                        </object>
+                      </child>
+                    </box>
+                  </children>
+                </child>
+
+                <!-- Image Source -->
+                <child name="image" type="Adw.Bin">
+                  <children>
+                    <box orientation="vertical">
+                      <child>
+                        <object type="Gtk.Picture" name="pasted_image">
+                          <property name="vexpand">true</property>
+                          <property name="content-fit">contain</property>
+                        </object>
+                      </child>
+                      <child>
+                        <box orientation="horizontal">
+                          <child>
+                            <object type="Gtk.DropTargetAsync" name="image_drop_target">
+                              <property name="actions">copy</property>
+                            </object>
+                          </child>
+                          <child>
+                            <object type="Gtk.Button" name="btn_filechooser" label="Choose Image"/>
+                          </child>
+                          <child>
+                            <object type="Gtk.Button" name="btn_screenshot" label="Screenshot"/>
+                          </child>
+                        </box>
+                      </child>
+                      <child>
+                        <object type="Gtk.Label" name="label_chosen_file"/>
+                      </child>
+                    </box>
+                  </children>
+                </child>
+
+                <!-- Screen Share Source -->
+                <child name="screen_share" type="Adw.Bin">
+                  <children>
+                    <box orientation="vertical">
+                      <child>
+                        <object type="Gtk.Picture" name="screen_display">
+                          <property name="vexpand">true</property>
+                          <property name="content-fit">cover</property>
+                        </object>
+                      </child>
+                      <child>
+                        <box orientation="horizontal">
+                          <child>
+                            <object type="Gtk.ToggleButton" name="btn_screen_pause" label="Pause Sharing"/>
+                          </child>
+                          <child>
+                            <object type="Gtk.Button" name="btn_start_screen_share" label="Start Sharing">
+                              <icon>
+                                <image stock="document-file"/>
+                              </icon>
+                            </object>
+                          </child>
+                          <child>
+                            <object type="Gtk.Label" name="label_btn_screen_share"/>
+                          </child>
+                        </box>
+                      </child>
+                    </box>
+                  </children>
+                </child>
+              </children>
+            </object>
+          </child>
+          <child>
+            <object type="Adw.BottomSheet" name="scanner_bottom_sheet">
+              <property name="enable_swipe_to_dismiss">true</property>
+              <children>
+                <child name="result_display_frame" type="Gtk.Frame">
+                  <property name="visible">true</property>
+                  <children>
+                    <object type="Adw.Bin" name="result_bin">
+                      <children>
+                        <box orientation="vertical">
+                          <child>
+                            <object type="Gtk.TextView" name="raw_result_display">
+                              <property name="editable">false</property>
+                              <property name="wrap-mode">word-char</property>
+                            </object>
+                          </child>
+                        </box>
+                      </children>
+                    </object>
+                  </children>
+                </child>
+              </children>
+            </object>
+          </child>
+        </box>
+      </children>
+    </object>
+  </insertable-object>
+</ui>

@@ -1,0 +1,15 @@
+[project]
+name = "cobang"
+version = "2.6.0"
+description = "A native QR Code and barcode scanner application for Linux desktop."
+readme = "README.rst"
+requires-python = ">=3.13"
+dependencies = [
+    "logbook>=1.9.2",
+    "logbook-stubs>=0.3.0",
+    "pillow>=12.3.0",
+    "pygobject-stubs>=2.17.0",
+    "qrcode>=8.2",
+    "requests>=2.34.2",
+    "zbar-py>=1.0.4",
+]

@@ -1,0 +1,34 @@
+<ui>
+  <insertable-object>
+    <object name="CoBangWindow" type="Adw.ApplicationWindow">
+      <property name="application_id">vn.hoabinh.quan.CoBang</property>
+      <children>
+        <header>
+          <object type="Adw.HeaderBar">
+            <children>
+              <object type="Gtk.TitleButton" name="toggle_scanner">
+                <property name="label">Scanner</property>
+                <property name="visible">true</property>
+              </object>
+              <object type="Gtk.TitleButton" name="toggle_generator">
+                <property name="label">Generator</property>
+                <property name="visible">true</property>
+              </object>
+            </children>
+          </object>
+        </header>
+        <viewstack name="job_viewstack" type="Adw.ViewStack">
+          <property name="vexpand">true</property>
+          <children>
+            <child name="scanner" type="Adw.Bin">
+              <object type="ScannerPage"/>
+            </child>
+            <child name="generator" type="Adw.Bin">
+              <object type="GeneratorPage"/>
+            </child>
+          </children>
+        </viewstack>
+      </children>
+    </object>
+  </insertable-object>
+</ui>

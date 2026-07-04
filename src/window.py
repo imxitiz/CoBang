@@ -70,16 +70,20 @@ class CoBangWindow(Adw.ApplicationWindow):
     generator_page: GeneratorPage = Gtk.Template.Child()
 
     portal_parent: Xdp.Parent
+    _screencast_session: Xdp.Session | None = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.portal_parent = XdpGtk4.parent_new_gtk(self)
+        self._screencast_session = None
         action = Gio.SimpleAction.new('paste-image', None)
         self.add_action(action)
         action.connect('activate', self.on_paste_image)
 
         # Connect signals from scanner page
         self.scanner_page.connect('request-camera-access', self.on_camera_access_requested)
+        self.scanner_page.connect('request-screen-share', self.on_screen_share_requested)
+        self.scanner_page.connect('request-screenshot', self.on_screenshot_requested)
         self.scanner_page.connect('poll-wifi-connection-status', self.on_wifi_connection_status_polled)
         self.scanner_page.connect('request-connect-wifi', self.on_wifi_connecting_requested)
 
@@ -150,6 +154,128 @@ class CoBangWindow(Adw.ApplicationWindow):
         video_fd = portal.open_pipewire_remote_for_camera()
         log.info('Pipewire remote fd: {}', video_fd)
         self.scanner_page.setup_camera_for_sandbox(video_fd)
+
+    def on_screen_share_requested(self, scanner_page, *args):
+        """Handle screen share request from scanner page."""
+        log.info('Screen share requested')
+        
+        # On X11, use ximagesrc directly (no portal needed)
+        display_server = os.getenv('XDG_SESSION_TYPE', '').lower()
+        if display_server == 'x11':
+            log.info('Using ximagesrc for X11 screen capture')
+            self.scanner_page.switch_to_screen_source()
+            self.scanner_page.setup_screencast(use_ximagesrc=True)
+            return
+        
+        # On Wayland (and default), use portal ScreenCast API
+        log.info('Using portal ScreenCast for screen capture')
+        self.portal.create_screencast_session(
+            Xdp.OutputType.MONITOR | Xdp.OutputType.WINDOW,
+            Xdp.ScreencastFlags.NONE,
+            Xdp.CursorMode.EMBEDDED,
+            Xdp.PersistMode.NONE,
+            None,  # restore_token
+            None,  # cancellable
+            self.cb_screencast_session_created,
+            None,  # user_data
+        )
+
+    def cb_screencast_session_created(self, portal: Xdp.Portal, result: Gio.AsyncResult):
+        """Callback after screencast session is created."""
+        try:
+            session = portal.create_screencast_session_finish(result)
+        except GLib.Error as e:
+            log.error('Failed to create screencast session: {}', e)
+            return
+        if not session:
+            log.error('No screencast session returned')
+            return
+        log.info('Screencast session created: {}', session)
+        # Keep a reference to close later
+        self._screencast_session = session
+        session.connect('closed', self._on_screencast_session_closed)
+        # Start the session (shows picker dialog to user)
+        session.start(
+            self.portal_parent,
+            None,  # cancellable
+            self.cb_screencast_started,
+            session,  # user_data
+        )
+
+    def _on_screencast_session_closed(self, session: Xdp.Session, *args):
+        """Called when the screencast session is closed by the portal."""
+        log.info('Screencast session closed')
+        self._screencast_session = None
+        self.scanner_page.stop_screencast()
+
+    def cb_screencast_started(self, session: Xdp.Session, result: Gio.AsyncResult):
+        """Callback after screencast session is started and user has chosen a source."""
+        try:
+            success = session.start_finish(result)
+        except GLib.Error as e:
+            log.error('Failed to start screencast: {}', e)
+            return
+        if not success:
+            log.info('Screencast start was cancelled by user')
+            return
+        log.info('Screencast started successfully')
+        # Get the PipeWire file descriptor for the stream
+        fd = session.open_pipewire_remote()
+        log.info('Screen capture PipeWire fd: {}', fd)
+        # Get stream info (node IDs)
+        streams_variant = session.get_streams()
+        node_id = 0
+        if streams_variant:
+            # streams_variant is a GVariant of type a(ua{sv})
+            n_children = streams_variant.n_children()
+            log.info('Number of streams: {}', n_children)
+            if n_children > 0:
+                child = streams_variant.get_child_value(0)
+                node_id = child.get_child_value(0).get_uint32()
+                log.info('Stream node ID: {}', node_id)
+        if fd < 0:
+            log.error('Invalid PipeWire fd from screencast')
+            return
+        self.scanner_page.switch_to_screen_source()
+        self.scanner_page.setup_screencast(fd, node_id)
+
+    def on_screenshot_requested(self, scanner_page, *args):
+        """Handle screenshot request from scanner page."""
+        log.info('Screenshot requested')
+        try:
+            self.portal.take_screenshot(
+                self.portal_parent,
+                Xdp.ScreenshotFlags.INTERACTIVE,
+                None,  # cancellable
+                self.cb_screenshot_taken,
+                None,  # user_data
+            )
+        except GLib.Error as e:
+            log.error('Failed to request screenshot: {}', e)
+
+    def cb_screenshot_taken(self, portal: Xdp.Portal, result: Gio.AsyncResult):
+        """Callback after screenshot is taken."""
+        try:
+            uri = portal.take_screenshot_finish(result)
+        except GLib.Error as e:
+            log.error('Failed to take screenshot: {}', e)
+            return
+        if not uri:
+            log.info('Screenshot was cancelled')
+            return
+        log.info('Screenshot URI: {}', uri)
+        # Load the screenshot as a Gio.File
+        file = Gio.File.new_for_uri(uri)
+        # Switch to image view and process
+        self.scanner_page.switch_to_image_source()
+        self.scanner_page.process_passed_image_file(file, 'image/png')
+        # Clean up the temp file after a short delay
+        GLib.timeout_add_seconds(2, lambda: self._cleanup_temp_file(file))
+
+    def _cleanup_temp_file(self, file: Gio.File) -> bool:
+        """Delete a temporary file asynchronously."""
+        file.delete_async(GLib.PRIORITY_LOW, None, None, None)
+        return False
 
     def on_camera_access_requested(self, scanner_page, *args):
         has_camera = self.portal.is_camera_present()

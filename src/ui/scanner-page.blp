@@ -331,6 +331,22 @@ template $ScannerPage: Adw.Bin {
                         hexpand: true;
                       }
                     }
+                    Box {
+                      orientation: horizontal;
+                      spacing: 4;
+                      Label {
+                        label: "•";
+                        halign: end;
+                        hexpand: true;
+                      }
+                      Label {
+                        label: _("Take a screenshot with the button below.");
+                        wrap: true;
+                        selectable: true;
+                        halign: start;
+                        hexpand: true;
+                      }
+                    }
                   }
                 }
               };
@@ -353,6 +369,23 @@ template $ScannerPage: Adw.Bin {
             Box {
               orientation: horizontal;
               spacing: 4;
+
+              Button btn_screenshot {
+                clicked => $on_btn_screenshot_clicked();
+
+                Box {
+                  orientation: horizontal;
+                  spacing: 4;
+
+                  Image {
+                    icon-name: 'camera-photo-symbolic';
+                  }
+
+                  Label {
+                    label: _("Take a Screenshot");
+                  }
+                }
+              }
 
               Button btn_filechooser {
                 clicked => $on_btn_filechooser_clicked();
@@ -381,6 +414,92 @@ template $ScannerPage: Adw.Bin {
                   'dimmed',
                 ]
               }
+            }
+          };
+        }
+
+        Adw.ViewStackPage stackpage_screen_share {
+          name: 'screen-share';
+          title: _("Screen");
+          icon-name: 'video-display-symbolic';
+
+          child: Box {
+            orientation: vertical;
+            spacing: 8;
+
+            Overlay {
+              vexpand: true;
+
+              Picture screen_display {
+                width-request: 360;
+                height-request: 240;
+              }
+
+              [overlay]
+              Box box_screen_controls {
+                orientation: horizontal;
+                halign: center;
+                valign: end;
+                spacing: 2;
+                visible: bind $has_some(screen_display.paintable) as <bool>;
+
+                ToggleButton btn_screen_play {
+                  icon-name: 'media-playback-start-symbolic';
+                  tooltip-text: _("Play");
+                  active: true;
+
+                  styles [
+                    'osd',
+                  ]
+                }
+
+                ToggleButton btn_screen_pause {
+                  icon-name: 'media-playback-pause-symbolic';
+                  tooltip-text: _("Pause");
+                  group: btn_screen_play;
+
+                  styles [
+                    'osd',
+                  ]
+
+                  toggled => $on_btn_screen_pause_toggled();
+                }
+              }
+            }
+
+            Box box_screen_actions {
+              orientation: horizontal;
+              spacing: 4;
+              halign: center;
+
+              Button btn_start_screen_share {
+                clicked => $on_btn_start_screen_share_clicked();
+                tooltip-text: _("Choose a screen or window to share");
+
+                Box {
+                  orientation: horizontal;
+                  spacing: 4;
+
+                  Image {
+                    icon-name: 'media-record-symbolic';
+                  }
+
+                  Label label_btn_screen_share {
+                    label: _("Start Sharing");
+                  }
+                }
+              }
+            }
+
+            Label label_screen_info {
+              label: _("Share your screen to scan QR codes from any on-screen content.");
+              wrap: true;
+              halign: center;
+              margin-top: 4;
+
+              styles [
+                'dim-label',
+              ]
             }
           };
         }

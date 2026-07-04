@@ -16,6 +16,7 @@ class JobName(StrEnum):
 class ScanSourceName(StrEnum):
     WEBCAM = 'webcam'
     IMAGE = 'image'
+    SCREEN_SHARE = 'screen-share'
 
 
 class WebcamPageLayoutName(StrEnum):
@@ -48,3 +49,8 @@ GST_SOURCE_NAME = 'webcam_source'
 GST_FLIP_FILTER_NAME = 'videoflip'
 GST_SINK_NAME = 'widget_sink'
 GST_APP_SINK_NAME = 'app_sink'
+
+GST_SCREEN_SOURCE_NAME = 'screen_source'
+GST_SCREEN_FLIP_FILTER_NAME = 'screen_videoflip'
+GST_SCREEN_SINK_NAME = 'screen_widget_sink'
+GST_SCREEN_APP_SINK_NAME = 'screen_app_sink'

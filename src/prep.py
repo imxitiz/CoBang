@@ -64,6 +64,8 @@ def make_grayscale(rgba_img: Image.Image, width: int, height: int) -> Image.Imag
 
 def is_image_almost_black_white(rgba_img: Image.Image):
     total_pixel = rgba_img.width * rgba_img.height
+    if total_pixel == 0:
+        return False
     # Get histogram
     htg = rgba_img.histogram()
     # Count pixels at the left most and right most of each RGB channel

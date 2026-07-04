@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import io
 import os
+import signal
+import threading
 from locale import gettext as _
 from typing import Any, Self, cast
 from urllib.parse import SplitResult, urlsplit
 
+import numpy as np
 import zbar
 from gi.repository import (  # pyright: ignore[reportMissingModuleSource]
     Adw,  # pyright: ignore[reportMissingModuleSource]
@@ -44,6 +47,10 @@ from ..consts import (
     GST_FLIP_FILTER_NAME,
     GST_SINK_NAME,
     GST_SOURCE_NAME,
+    GST_SCREEN_APP_SINK_NAME,
+    GST_SCREEN_FLIP_FILTER_NAME,
+    GST_SCREEN_SINK_NAME,
+    GST_SCREEN_SOURCE_NAME,
     DeviceSourceType,
     ScannerState,
     ScanSourceName,
@@ -64,15 +71,15 @@ from ..ui import build_url_display, build_wifi_info_display
 log = Logger(__name__)
 
 
-def build_display_sink_desc() -> str:
+def build_display_sink_desc(sink_name: str = GST_SINK_NAME) -> str:
     # On Wayland, GTK4 provides a proper GL context to gtk4paintablesink, so glsinkbin
     # works for zero-copy GPU rendering. On X11, the wrapped GL context lacks the
     # gst_gl_context_fill_info() implementation, causing glsinkbin to stall after the
     # first frame. Probe the display server to choose the right path.
     display_server = os.getenv('XDG_SESSION_TYPE', '').lower()
     if display_server == 'wayland':
-        return f'glsinkbin sink="gtk4paintablesink name={GST_SINK_NAME}" name=sink_bin'
-    return f'videoconvert ! gtk4paintablesink name={GST_SINK_NAME}'
+        return f'glsinkbin sink="gtk4paintablesink name={sink_name}" name=sink_bin'
+    return f'videoconvert ! gtk4paintablesink name={sink_name}'
 
 
 @Gtk.Template.from_resource('/vn/hoabinh/quan/CoBang/gtk/scanner-page.ui')
@@ -98,6 +105,7 @@ class ScannerPage(Adw.Bin):
     pasted_image: Gtk.Picture = Gtk.Template.Child()
     image_drop_target: Gtk.DropTargetAsync = Gtk.Template.Child()
     btn_filechooser: Gtk.Button = Gtk.Template.Child()
+    btn_screenshot: Gtk.Button = Gtk.Template.Child()
     label_chosen_file: Gtk.Label = Gtk.Template.Child()
     scanner_bottom_sheet: Adw.BottomSheet = Gtk.Template.Child()
     result_display_frame: Gtk.Frame = Gtk.Template.Child()
@@ -106,11 +114,30 @@ class ScannerPage(Adw.Bin):
     raw_result_expander: Gtk.Expander = Gtk.Template.Child()
     webcam_dropdown: Gtk.DropDown = Gtk.Template.Child()
 
+    # Screen share template children
+    screen_display: Gtk.Picture = Gtk.Template.Child()
+    btn_screen_pause: Gtk.ToggleButton = Gtk.Template.Child()
+    btn_start_screen_share: Gtk.Button = Gtk.Template.Child()
+    label_btn_screen_share: Gtk.Label = Gtk.Template.Child()
+
     gst_pipeline: Gst.Pipeline | None = None
+    screen_gst_pipeline: Gst.Pipeline | None = None
     dev_monitor: Gst.DeviceMonitor | None = None
+
+    # Stored screencast session data for pause/resume without re-opening portal
+    _screencast_fd: int = -1
+    _screencast_node_id: int = 0
 
     @GObject.Signal('request-camera-access', flags=GObject.SignalFlags.RUN_LAST)
     def signal_request_camera_access(self):
+        pass
+
+    @GObject.Signal('request-screen-share', flags=GObject.SignalFlags.RUN_LAST)
+    def signal_request_screen_share(self):
+        pass
+
+    @GObject.Signal('request-screenshot', flags=GObject.SignalFlags.RUN_LAST)
+    def signal_request_screenshot(self):
         pass
 
     @GObject.Signal('poll-wifi-connection-status', flags=GObject.SignalFlags.RUN_LAST, arg_types=(object,))
@@ -126,8 +153,31 @@ class ScannerPage(Adw.Bin):
 
         self.webcam_multilayout.set_layout_name(WebcamPageLayoutName.REQUESTING)
 
-        # Initialize zbar scanner
-        self.zbar_scanner = zbar.ImageScanner()
+        # Initialize zbar scanner (zbar-py API)
+        self.zbar_scanner = zbar.Scanner()
+        # Thread-safety lock: zbar.Scanner C code is NOT thread-safe
+        # Concurrent access from webcam + screen share streaming threads causes SIGFPE
+        self._zbar_lock = threading.Lock()
+
+    def _safe_zbar_scan(self, gray_array: np.ndarray) -> list:
+        """Thread-safe zbar scan.
+
+        zbar-py's C extension is NOT thread-safe — concurrent access from
+        webcam and screen streaming threads can crash with SIGFPE. We use
+        a threading lock to serialize all calls.
+
+        Note: SIGFPE signal handler would be ideal but signal.signal() only
+        works in the main thread, and streaming threads cannot use it.
+        Instead we rely on thread-safety (lock) and input validation to
+        prevent crashes.
+        """
+        with self._zbar_lock:
+            try:
+                results = list(self.zbar_scanner.scan(gray_array))
+            except Exception as e:
+                log.warning('zbar scan error: {}', e)
+                results = []
+        return results
 
     @property
     def is_at_scanning(self) -> bool:
@@ -141,6 +191,10 @@ class ScannerPage(Adw.Bin):
     def switch_to_image_source(self):
         """Switch to image source view"""
         self.scan_source_viewstack.set_visible_child_name(ScanSourceName.IMAGE)
+
+    def switch_to_screen_source(self):
+        """Switch to screen share source view"""
+        self.scan_source_viewstack.set_visible_child_name(ScanSourceName.SCREEN_SHARE)
 
     def open_file_chooser_dialog(self, parent_window: Gtk.Window):
         """Open file chooser dialog to select an image file"""
@@ -173,13 +227,26 @@ class ScannerPage(Adw.Bin):
         self.reset_result()
         visible_child_name = viewstack.get_visible_child_name()
         if visible_child_name == ScanSourceName.WEBCAM:
+            # Stop screen share if active
+            self.stop_screencast()
             if not self.gst_pipeline:
                 self.request_camera_access()
                 return
             if not self.btn_pause.get_active():
                 self.play_webcam()
             return
+        if visible_child_name == ScanSourceName.SCREEN_SHARE:
+            # Stop webcam if active
+            self.stop_webcam()
+            if not self.screen_gst_pipeline:
+                # Don't auto-start; user clicks "Start Sharing" button
+                return
+            if not self.btn_screen_pause.get_active():
+                self.play_screencast()
+            return
+        # Leave webcam or screen-share → stop those sources
         self.stop_webcam()
+        self.stop_screencast()
 
     @Gtk.Template.Callback()
     def is_empty(self, wd: Self, value: Any) -> bool:
@@ -504,6 +571,201 @@ class ScannerPage(Adw.Bin):
             self.scanner_state = ScannerState.SCANNING
         self.enable_webcam_consumption(gst_pipeline)
 
+    def build_screencast_pipeline(self, fd: int, node_id: int) -> Gst.Pipeline | None:
+        """Build GStreamer pipeline for screen capture via PipeWire (Wayland/Portal)."""
+        flip_method = 'horizontal-flip' if self.mirror_switch.get_active() else 'none'
+        cmd = (
+            f'pipewiresrc fd={fd} path={node_id} name={GST_SCREEN_SOURCE_NAME} ! '
+            f'videoflip name={GST_SCREEN_FLIP_FILTER_NAME} method={flip_method} ! '
+            f'videoconvert ! tee name=t ! '
+            f'queue leaky=2 ! videoscale ! {build_display_sink_desc(GST_SCREEN_SINK_NAME)} '
+            't. ! queue leaky=2 max-size-buffers=2 ! videoconvert ! video/x-raw,format=GRAY8 ! '
+            f'appsink name={GST_SCREEN_APP_SINK_NAME} max_buffers=2 drop=1'
+        )
+        log.info('Screen share pipeline: {}', cmd)
+        try:
+            pipeline = cast(Gst.Pipeline, Gst.parse_launch(cmd))
+        except GLib.Error as e:
+            log.error('Failed to build screencast pipeline: {}', e)
+            self.screen_gst_pipeline = None
+            return None
+        log.debug('Screen pipeline built: {}', pipeline)
+        return pipeline
+
+    def build_ximagesrc_pipeline(self) -> Gst.Pipeline | None:
+        """Build GStreamer pipeline for screen capture via ximagesrc (X11 fallback)."""
+        cmd = (
+            f'ximagesrc name={GST_SCREEN_SOURCE_NAME} ! '
+            f'videoflip name={GST_SCREEN_FLIP_FILTER_NAME} method=none ! '
+            f'videoconvert ! tee name=t ! '
+            f'queue leaky=2 ! videoscale ! videoconvert ! gtk4paintablesink name={GST_SCREEN_SINK_NAME} '
+            't. ! queue leaky=2 max-size-buffers=2 ! videoconvert ! video/x-raw,format=GRAY8 ! '
+            f'appsink name={GST_SCREEN_APP_SINK_NAME} max_buffers=2 drop=1'
+        )
+        log.info('X11 screen share pipeline: {}', cmd)
+        try:
+            pipeline = cast(Gst.Pipeline, Gst.parse_launch(cmd))
+        except GLib.Error as e:
+            log.error('Failed to build ximagesrc pipeline: {}', e)
+            return None
+        log.debug('X11 screen pipeline built: {}', pipeline)
+        return pipeline
+
+    def setup_screencast(self, fd: int = -1, node_id: int = 0, use_ximagesrc: bool = False):
+        """Setup screen capture pipeline.
+        
+        Only one capture source may be active at a time (GStreamer threaded
+        pipelines sharing GTK sinks can corrupt memory). Webcam is stopped
+        before starting screen capture.
+        
+        Args:
+            fd: PipeWire file descriptor from portal (ignored if use_ximagesrc=True)
+            node_id: PipeWire node ID from portal (ignored if use_ximagesrc=True)
+            use_ximagesrc: If True, use ximagesrc instead of pipewiresrc (X11 fallback)
+        """
+        self.stop_screencast()
+        self.stop_webcam()
+        self._screencast_fd = fd
+        self._screencast_node_id = node_id
+        
+        if use_ximagesrc:
+            pipeline = self.build_ximagesrc_pipeline()
+        else:
+            pipeline = self.build_screencast_pipeline(fd, node_id)
+        if not pipeline:
+            return
+        # Attach display sink
+        gtk4_sink = pipeline.get_by_name(GST_SCREEN_SINK_NAME)
+        if not gtk4_sink:
+            sink_bin = pipeline.get_by_name('sink_bin')
+            if sink_bin:
+                gtk4_sink = sink_bin.get_property('sink')
+        if gtk4_sink:
+            paintable = gtk4_sink.get_property('paintable')
+            self.screen_display.set_paintable(paintable)
+        else:
+            log.error('Failed to get gtk4paintablesink for screen display')
+            return
+        self.screen_gst_pipeline = pipeline
+        self.btn_start_screen_share.set_sensitive(False)
+        self.label_btn_screen_share.set_text(_('Sharing...'))
+        # Start playback & enable consumption
+        if not self.btn_screen_pause.get_active():
+            self.play_screencast()
+        self.enable_screencast_consumption(pipeline)
+
+    def play_screencast(self):
+        log.info('Playing screencast')
+        if self.screen_gst_pipeline:
+            self.screen_gst_pipeline.set_state(Gst.State.PLAYING)
+            self.scanner_state = ScannerState.SCANNING
+
+    def stop_screencast(self):
+        log.info('Stopping screencast')
+        self.scanner_state = ScannerState.IDLE
+        if self.screen_gst_pipeline:
+            self.disable_screencast_consumption(self.screen_gst_pipeline)
+            self.screen_gst_pipeline.set_state(Gst.State.NULL)
+            self.screen_gst_pipeline = None
+        self.screen_display.set_paintable(None)
+        self.btn_start_screen_share.set_sensitive(True)
+        self.label_btn_screen_share.set_text(_('Start Sharing'))
+
+    def enable_screencast_consumption(self, pipeline: Gst.Pipeline):
+        if app_sink := pipeline.get_by_name(GST_SCREEN_APP_SINK_NAME):
+            log.debug('Screen appsink: {}', app_sink)
+            app_sink.set_emit_signals(True)
+            app_sink.connect('new-sample', self.on_new_screen_sample)
+        else:
+            log.warning('Screen appsink not found in pipeline')
+
+    def disable_screencast_consumption(self, pipeline: Gst.Pipeline):
+        if app_sink := pipeline.get_by_name(GST_SCREEN_APP_SINK_NAME):
+            log.debug('Disable screen appsink consumption')
+            app_sink.set_emit_signals(False)
+            self._disconnect_signal(app_sink, 'new-sample', self.on_new_screen_sample)
+
+    def _disconnect_signal(self, obj, signal_name, func):
+        """Safely disconnect a signal handler."""
+        try:
+            obj.disconnect_by_func(func)
+        except Exception:
+            pass
+
+    def on_new_screen_sample(self, appsink: GstApp.AppSink) -> Gst.FlowReturn:
+        """Process screen capture frame for QR code scanning."""
+        if appsink.is_eos():
+            return Gst.FlowReturn.OK
+        sample = cast(Gst.Sample | None, appsink.try_pull_sample(0.5))
+        if not sample:
+            return Gst.FlowReturn.OK
+        buffer = sample.get_buffer()
+        if not buffer:
+            return Gst.FlowReturn.OK
+        caps = sample.get_caps()
+        if not caps:
+            return Gst.FlowReturn.OK
+        struct = caps.get_structure(0)
+        exist, width = struct.get_int('width')
+        if not exist:
+            return Gst.FlowReturn.ERROR
+        exist, height = struct.get_int('height')
+        if not exist:
+            return Gst.FlowReturn.ERROR
+        success, mapinfo = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            log.error('Failed to map screen buffer')
+            return Gst.FlowReturn.ERROR
+        raw_bytes = mapinfo.data.tobytes() if isinstance(mapinfo.data, memoryview) else mapinfo.data
+        buffer.unmap(mapinfo)
+        if width <= 0 or height <= 0:
+            log.warning('Invalid screen frame dimensions: {}x{}', width, height)
+            return Gst.FlowReturn.OK
+        expected = width * height
+        if len(raw_bytes) < expected:
+            log.warning('Screen frame buffer too small: {} < {}', len(raw_bytes), expected)
+            return Gst.FlowReturn.OK
+        try:
+            gray_array = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((height, width))
+        except Exception as e:
+            log.error('Screen buffer reshape error: {}', e)
+            return Gst.FlowReturn.OK
+        results = self._safe_zbar_scan(gray_array)
+        if results:
+            log.info('Found {} QR code(s) in screen capture', len(results))
+            self.btn_screen_pause.set_active(True)
+            GLib.idle_add(self.display_result, results)
+        return Gst.FlowReturn.OK
+
+    @Gtk.Template.Callback()
+    def on_btn_screen_pause_toggled(self, button: Gtk.ToggleButton):
+        to_pause = button.get_active()
+        self.scanner_state = ScannerState.IDLE if to_pause else ScannerState.SCANNING
+        if not self.screen_gst_pipeline:
+            return
+        if to_pause:
+            if app_sink := self.screen_gst_pipeline.get_by_name(GST_SCREEN_APP_SINK_NAME):
+                app_sink.set_emit_signals(False)
+            if source := self.screen_gst_pipeline.get_by_name(GST_SCREEN_SOURCE_NAME):
+                source.set_state(Gst.State.PAUSED)
+            return
+        # Resume: rebuild pipeline with stored fd/node_id (no portal re-prompt)
+        if self._screencast_fd >= 0:
+            self.setup_screencast(self._screencast_fd, self._screencast_node_id)
+        else:
+            # No stored session, request a new one
+            self.emit('request-screen-share')
+
+    @Gtk.Template.Callback()
+    def on_btn_start_screen_share_clicked(self, button: Gtk.Button):
+        """Start screen share via portal."""
+        self.emit('request-screen-share')
+
+    @Gtk.Template.Callback()
+    def on_btn_screenshot_clicked(self, button: Gtk.Button):
+        """Take a screenshot via portal."""
+        self.emit('request-screenshot')
+
     def update_webcam_activity(self, is_visible: bool):
         if not is_visible:
             self.stop_webcam()
@@ -544,16 +806,29 @@ class ScannerPage(Adw.Bin):
             return Gst.FlowReturn.ERROR
         # The documentation https://lazka.github.io/pgi-docs/#Gst-1.0/classes/MapInfo.html says that
         # the .data is a bytes, but in Ubuntu, it is a memoryview.
-        image_data = mapinfo.data.tobytes() if isinstance(mapinfo.data, memoryview) else mapinfo.data
-        img = zbar.Image(width, height, 'Y800', image_data)
-        n = self.zbar_scanner.scan(img)
-        log.info('Scanned {} symbols', n)
-        if not n:
+        raw_bytes = mapinfo.data.tobytes() if isinstance(mapinfo.data, memoryview) else mapinfo.data
+        buffer.unmap(mapinfo)
+        if width <= 0 or height <= 0:
+            log.warning('Invalid webcam frame dimensions: {}x{}', width, height)
+            return Gst.FlowReturn.OK
+        expected = width * height
+        if len(raw_bytes) < expected:
+            log.warning('Webcam frame buffer too small: {} < {}', len(raw_bytes), expected)
+            return Gst.FlowReturn.OK
+        # zbar-py expects a numpy uint8 array
+        try:
+            gray_array = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((height, width))
+        except Exception as e:
+            log.error('Webcam buffer reshape error: {}', e)
+            return Gst.FlowReturn.OK
+        results = self._safe_zbar_scan(gray_array)
+        log.info('Scanned {} symbols', len(results))
+        if not results:
             return Gst.FlowReturn.OK
         # Found QR code in webcam screenshot
         # Pause video to prevent further processing.
         self.btn_pause.set_active(True)
-        GLib.idle_add(self.display_result, img.symbols)
+        GLib.idle_add(self.display_result, results)
         return Gst.FlowReturn.OK
 
     def on_device_monitor_message(self, bus: Gst.Bus, message: Gst.Message, user_data: Any) -> bool:
@@ -687,29 +962,38 @@ class ScannerPage(Adw.Bin):
         # we need to convert it to grayscale, replacing transparency with white.
         # Because the source image can have alpha channel, we need to convert it to LA.
         grayscale = make_grayscale(rgba_img, w, h)
-        zimg = zbar.Image(w, h, 'Y800', grayscale.tobytes())
-        n = self.zbar_scanner.scan(zimg)
-        log.debug('Any QR code?: {}', n)
-        if not n and is_image_almost_black_white(rgba_img):
+        # zbar-py expects uint8 numpy array
+        if w <= 0 or h <= 0:
+            log.warning('Invalid texture dimensions: {}x{}', w, h)
+            return
+        gray_array = np.frombuffer(grayscale.tobytes(), dtype=np.uint8).reshape((h, w))
+        results = self._safe_zbar_scan(gray_array)
+        log.debug('Any QR code?: {}', len(results))
+        if not results and is_image_almost_black_white(rgba_img):
             # Invert and try again
             grayscale = invert_and_make_grayscale(rgba_img, w, h)
-            zimg = zbar.Image(w, h, 'Y800', grayscale.tobytes())
-            n = self.zbar_scanner.scan(zimg)
-        if not n:
+            gray_array = np.frombuffer(grayscale.tobytes(), dtype=np.uint8).reshape((h, w))
+            results = self._safe_zbar_scan(gray_array)
+        if not results:
             log.info('No QR code found in texture.')
             self.scanner_state = ScannerState.NO_RESULT
             return
-        GLib.idle_add(self.display_result, zimg.symbols)
+        GLib.idle_add(self.display_result, results)
 
-    def display_result(self, symbols: zbar.SymbolSet):
+    def display_result(self, symbols: list):
         # There can be more than one QR code in the image. We just pick the first.
-        # No need to to handle StopIteration exception, because this function is called
-        # only when QR code is detected from the image.
-        sym: zbar.Symbol = next(iter(symbols))
+        # This function is called only when QR code is detected.
+        if not symbols:
+            return
+        sym = symbols[0]
         log.info('QR type: {}', sym.type)
-        # We expect ZBar to return bytes, but it returns str.
-        raw_data = cast(str, sym.data)
+        # zbar-py returns data as bytes, decode to str
+        raw_data = sym.data.decode() if isinstance(sym.data, bytes) else str(sym.data)
         log.info('Decoded string: {}', raw_data)
+
+        # Send desktop notification
+        self._send_qr_notification(raw_data)
+
         log.debug('Set text for raw_result_buffer')
         buffer = self.raw_result_display.get_buffer()
         buffer.set_text(raw_data)
@@ -733,6 +1017,25 @@ class ScannerPage(Adw.Bin):
         self.scanner_state = ScannerState.TEXT_FOUND
         self.raw_result_expander.set_expanded(True)
         self.scanner_bottom_sheet.set_open(True)
+
+    def _send_qr_notification(self, raw_data: str):
+        """Send a desktop notification when a QR code is detected."""
+        try:
+            root = self.get_root()
+            if not root:
+                return
+            app = root.get_application()
+            if not app:
+                return
+            notification = Gio.Notification.new('QR Code Detected')
+            # Show first 200 chars of data in notification body
+            body = raw_data if len(raw_data) <= 200 else raw_data[:197] + '...'
+            notification.set_body(body)
+            notification.set_priority(Gio.NotificationPriority.HIGH)
+            notification.set_default_action('app.focus')
+            app.send_notification('qr-detected', notification)
+        except Exception as e:
+            log.warning('Failed to send notification: {}', e)
 
     def build_wifi_display(self, wifi: WifiInfoMessage):
         match build_wifi_info_display(wifi):

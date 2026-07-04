@@ -73,6 +73,7 @@ class CoBangApplication(Adw.Application):
         Adw.Application.do_startup(self)
         self.create_action('quit', lambda *_: self.quit(), ['<primary>q'])
         self.create_action('about', self.on_about_action)
+        self.create_action('focus', self.on_focus_action)
         self.portal = Xdp.Portal()
 
     def do_activate(self):
@@ -85,6 +86,11 @@ class CoBangApplication(Adw.Application):
         if not win:
             win = CoBangWindow(application=self)
         win.present()
+
+    def on_focus_action(self, *args):
+        """Bring the active window to front (used by notification click)."""
+        if win := cast(CoBangWindow | None, self.props.active_window):
+            win.present()
 
     def do_open(self, files: Sequence[Gio.File], hint: str):
         """Called when the application is opened with files."""
