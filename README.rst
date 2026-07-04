@@ -10,7 +10,34 @@ A native QR Code and barcode scanner application for Linux desktop.
     :width: 400
 
 
-CoBang can scan barcode, QR code from webcam or static image, local or remote.
+CoBang can scan barcode, QR code from webcam, screen share, or static image, local or remote.
+
+
+Fork changes (v2.6.0)
++++++++++++++++++++++
+
+This fork adds several new features and crash fixes beyond the original v2.5.2:
+
+- **Screen share live-feed**: Scan QR codes from your screen in real-time.
+  Works on Wayland via Portal ScreenCast API and on X11 via ximagesrc.
+- **Screenshot capture**: Take a screenshot and scan it for QR codes
+  (uses xdg-desktop-portal Screenshot API).
+- **Desktop notifications**: Sends a `GNotification` when a QR code is
+  detected; clicking it brings the app window to front.
+- **Crash fixes**:
+  - Fixed ``Floating point exception`` (SIGFPE) caused by thread-unsafe
+    ``zbar-py`` access when both webcam and screen share ran concurrently.
+  - Fixed heap corruption (``realloc(): invalid next size``) from
+    simultaneous GStreamer pipelines — capture sources are now mutually
+    exclusive.
+  - Added buffer validation before zbar scanning.
+- **zbar-py migration**: All ZBar calls use the ``zbar-py`` package
+  (``zbar.Scanner()`` with numpy arrays) instead of the upstream
+  ``zbar`` C library. This is the only zbar available via pip on
+  modern Python versions.
+- **Code quality**: Thread-safety lock around zbar scanner, input
+  validation on all scan paths (webcam, screen, texture), safe div-by-zero
+  guard in image preprocessing.
 
 
 Name

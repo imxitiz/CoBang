@@ -58,6 +58,14 @@
   </kudos>
 
   <releases>
+    <release version="2.6.0" date="2026-07-04" urgency="medium">
+      <description translate="no">
+        <p>Screen share live-feed mode via Portal ScreenCast (Wayland) or ximagesrc (X11).</p>
+        <p>Screenshot capture via Portal Screenshot API.</p>
+        <p>Desktop notification with click-to-focus when QR code detected.</p>
+        <p>Floating point exception &amp; heap corruption crash fixes.</p>
+      </description>
+    </release>
     <release version="2.5.2" date="2026-05-19" urgency="medium">
       <description translate="no">
         <p>Do not use `glsinkbin` on X11.</p>

@@ -1,9 +1,31 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[tool.setuptools.packages.find]
+include = ["cobang*"]
+
 [project]
 name = "cobang"
 version = "2.6.0"
 description = "A native QR Code and barcode scanner application for Linux desktop."
 readme = "README.rst"
 requires-python = ">=3.13"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Nguyễn Hồng Quân", email = "ng.hong.quan@gmail.com"},
+]
+keywords = ["qr", "barcode", "scanner", "gtk4", "adwaita"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Capture :: Scanners",
+]
 dependencies = [
     "logbook>=1.9.2",
     "logbook-stubs>=0.3.0",
