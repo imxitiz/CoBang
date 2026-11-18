@@ -1,4 +1,4 @@
-from gi.repository import GObject  # pyright: ignore[reportMissingModuleSource]
+from gi.repository import GObject
 
 from .consts import DeviceSourceType
 
@@ -12,9 +12,7 @@ class WebcamDeviceInfo(GObject.GObject):
     path = GObject.Property(type=str)
     name = GObject.Property(type=str)
 
-    __gsignals__ = {
-        'changed': (GObject.SignalFlags.RUN_LAST, None, ()),
-    }
+    changed = GObject.Signal('changed', flags=GObject.SignalFlags.RUN_LAST)
 
     def __init__(self, source_type: DeviceSourceType, path: str, name: str):
         super().__init__()
@@ -33,6 +31,9 @@ class WifiNetworkInfo(GObject.GObject):
     # Possible values: 'none', 'ieee8021x', 'owe', 'wpa-psk', 'sae', 'wpa-eap', 'wpa-eap-suite-b-192'.
     # If seeing unknown value, assume 'wpa-psk'.
     key_mgmt = GObject.Property(type=str, default='none')
+    # Whether the SSID is hidden (not broadcast). Ref:
+    # https://lazka.github.io/pgi-docs/#NM-1.0/classes/SettingWireless.html#NM.SettingWireless.props.hidden
+    hidden = GObject.Property(type=bool, default=False)
     # Whether this network is currently active (connected)
     is_active = GObject.Property(type=bool, default=False)
     # Whether failed to retrieve password, maybe broken storage in NetworkManager.
@@ -42,15 +43,14 @@ class WifiNetworkInfo(GObject.GObject):
     # Icon name representing signal strength (e.g. network-wireless-signal-excellent-symbolic)
     signal_strength_icon = GObject.Property(type=str, default='network-wireless-signal-none-symbolic')
 
-    __gsignals__ = {
-        'changed': (GObject.SignalFlags.RUN_LAST, None, ()),
-    }
+    changed = GObject.Signal('changed', flags=GObject.SignalFlags.RUN_LAST)
 
     def __init__(
         self,
         ssid: str,
         password: str = '',
         key_mgmt: str = 'none',
+        hidden: bool = False,
         is_active: bool = False,
         signal_strength: int = 0,
         uuid: str = '',
@@ -60,6 +60,20 @@ class WifiNetworkInfo(GObject.GObject):
         self.ssid = ssid
         self.password = password
         self.key_mgmt = key_mgmt
+        self.hidden = hidden
         self.is_active = is_active
         self.signal_strength = signal_strength
         # Caller should update signal_strength_icon after setting strength.
+
+
+class GeneratorChoiceItem(GObject.GObject):
+    """A single item for generator combo rows, with a display label and an internal value."""
+
+    __gtype_name__ = 'GeneratorChoiceItem'
+    label = GObject.Property(type=str)
+    value = GObject.Property(type=str)
+
+    def __init__(self, label: str, value: str):
+        super().__init__()
+        self.label = label
+        self.value = value

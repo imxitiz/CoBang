@@ -21,9 +21,12 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from datetime import datetime
+from locale import gettext as _
 from typing import cast
 
 import gi
+import logbook
+from logbook.handlers import Handler, StringFormatterHandlerMixin
 
 
 gi.require_version('Gtk', '4.0')
@@ -39,13 +42,11 @@ gi.require_version('NM', '1.0')
 gi.require_version('GdkPixbuf', '2.0')
 gi.require_version('Rsvg', '2.0')
 
-from locale import gettext as _
 
-from gi.repository import Adw, Gio, Gst, Gtk, Xdp  # pyright: ignore[reportMissingModuleSource]
+from gi.repository import Adw, Gio, GLib, Gst, Gtk, Xdp
 from logbook import Logger
 
-from .consts import APP_ID, BRAND_NAME
-from .logging import GLibLogHandler
+from .consts import APP_ID, BRAND_NAME, SHORT_NAME
 from .prep import guess_mimetype
 from .window import CoBangWindow
 
@@ -53,10 +54,39 @@ from .window import CoBangWindow
 DEVELOPPERS = ('Nguyễn Hồng Quân <ng.hong.quan@gmail.com>',)
 ARTISTS = ('Shadd Gallegos', 'Lucide')
 DONATE_TITLE = _('Support the developer')
-COMMENTS = _('QR code / barcode scanner for Linux.\n%(donate_link)s') % {
+COMMENTS = _('QR code / barcode scanner.\n%(donate_link)s') % {
     'donate_link': f"<a href='https://ko-fi.com/hongquanvn'>{DONATE_TITLE}</a>."
 }
 log = Logger(__name__)
+
+
+LOGBOOK_LEVEL_TO_GLIB = {
+    logbook.DEBUG: GLib.LogLevelFlags.LEVEL_DEBUG,
+    logbook.INFO: GLib.LogLevelFlags.LEVEL_INFO,
+    logbook.WARNING: GLib.LogLevelFlags.LEVEL_WARNING,
+    # For Error level, we translate to GLib Critical, instead of Error, because the later causes crash
+    logbook.ERROR: GLib.LogLevelFlags.LEVEL_CRITICAL,
+}
+
+
+def _log(level: GLib.LogLevelFlags, message: str):
+    variant_message = GLib.Variant('s', message)
+
+    variant_dict = GLib.Variant(
+        'a{sv}',
+        {
+            'MESSAGE': variant_message,
+        },
+    )
+    GLib.log_variant(SHORT_NAME, level, variant_dict)
+
+
+# Logbook custom handler to redirect message to GLib log
+class GLibLogHandler(Handler, StringFormatterHandlerMixin):
+    def emit(self, record):
+        message = self.format(record)
+        level = LOGBOOK_LEVEL_TO_GLIB[record.level]
+        _log(level, message)
 
 
 class CoBangApplication(Adw.Application):
@@ -82,8 +112,7 @@ class CoBangApplication(Adw.Application):
         We raise the application's main window, creating it if
         necessary.
         """
-        win = self.props.active_window
-        if not win:
+        if not (win := self.get_active_window()):
             win = CoBangWindow(application=self)
         win.present()
 
@@ -92,7 +121,7 @@ class CoBangApplication(Adw.Application):
         if win := cast(CoBangWindow | None, self.props.active_window):
             win.present()
 
-    def do_open(self, files: Sequence[Gio.File], hint: str):
+    def do_open(self, files: Sequence[Gio.File], _n_files: int, hint: str) -> None:
         """Called when the application is opened with files."""
         if not files:
             return
@@ -104,15 +133,16 @@ class CoBangApplication(Adw.Application):
         if not mime_type or not mime_type.startswith('image/'):
             log.info('Not an image. Ignore.')
             return
-        win = cast(CoBangWindow | None, self.props.active_window)
-        if not win:
+        if not (win := cast(CoBangWindow | None, self.get_active_window())):
             win = CoBangWindow(application=self)
         win.process_file_from_commandline(file, mime_type)
         win.present()
 
-    def on_about_action(self, *args):
+    def on_about_action(self, *args) -> None:
         """Callback for the app.about action."""
-        if win := cast(CoBangWindow | None, self.props.active_window):
+        if not (win := self.get_active_window()):
+            return
+        if isinstance(win, CoBangWindow):
             win.activate_pause_button()
         version = self.get_version() or '0.0'
         year = datetime.now().year
@@ -131,7 +161,7 @@ class CoBangApplication(Adw.Application):
         )
         # Translators: Replace "translator-credits" with your name/username, and optionally an email or URL.
         # about.set_translator_credits(_('translator-credits'))
-        about.present(self.props.active_window)
+        about.present(win)
 
     def create_action(self, name, callback, shortcuts=None):
         """Add an application action.
@@ -147,6 +177,12 @@ class CoBangApplication(Adw.Application):
         self.add_action(action)
         if shortcuts:
             self.set_accels_for_action(f'app.{name}', shortcuts)
+
+    def quit(self) -> None:
+        log.info('About to quit')
+        if (win := self.get_active_window()) and isinstance(win, CoBangWindow):
+            win.prepare_to_close()
+        super().quit()
 
 
 def main(version):

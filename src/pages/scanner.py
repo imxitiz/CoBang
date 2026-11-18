@@ -21,23 +21,22 @@ from __future__ import annotations
 
 import io
 import os
-import signal
 import threading
 from locale import gettext as _
 from typing import Any, Self, cast
 from urllib.parse import SplitResult, urlsplit
 
 import numpy as np
-import zbar
-from gi.repository import (  # pyright: ignore[reportMissingModuleSource]
-    Adw,  # pyright: ignore[reportMissingModuleSource]
-    Gdk,  # pyright: ignore[reportMissingModuleSource]
-    Gio,  # pyright: ignore[reportMissingModuleSource]
-    GLib,  # pyright: ignore[reportMissingModuleSource]
-    GObject,  # pyright: ignore[reportMissingModuleSource]
-    Gst,  # pyright: ignore[reportMissingModuleSource]
-    GstApp,  # pyright: ignore[reportMissingModuleSource]
-    Gtk,  # pyright: ignore[reportMissingModuleSource]
+import zbar  # zuban: ignore[import-not-found]
+from gi.repository import (
+    Adw,
+    Gdk,
+    Gio,
+    GLib,
+    GObject,
+    Gst,
+    GstApp,
+    Gtk,
 )
 from logbook import Logger
 from PIL import Image
@@ -123,33 +122,41 @@ class ScannerPage(Adw.Bin):
     gst_pipeline: Gst.Pipeline | None = None
     screen_gst_pipeline: Gst.Pipeline | None = None
     dev_monitor: Gst.DeviceMonitor | None = None
+    # Because the `on_new_webcam_sample` callback is run in a GStreamer
+    # thread, which may be started when the Python interpreter has been destroyed,
+    # we use this event to short-circuit those threads when the app is about to quit.
+    shuttingdown: threading.Event
 
     # Stored screencast session data for pause/resume without re-opening portal
     _screencast_fd: int = -1
     _screencast_node_id: int = 0
 
-    @GObject.Signal('request-camera-access', flags=GObject.SignalFlags.RUN_LAST)
-    def signal_request_camera_access(self):
-        pass
-
-    @GObject.Signal('request-screen-share', flags=GObject.SignalFlags.RUN_LAST)
-    def signal_request_screen_share(self):
-        pass
-
-    @GObject.Signal('request-screenshot', flags=GObject.SignalFlags.RUN_LAST)
-    def signal_request_screenshot(self):
-        pass
-
-    @GObject.Signal('poll-wifi-connection-status', flags=GObject.SignalFlags.RUN_LAST, arg_types=(object,))
-    def signal_poll_wifi_connection_status(self, info: WifiInfoMessage):
-        pass
-
-    @GObject.Signal('request-connect-wifi', flags=GObject.SignalFlags.RUN_LAST, arg_types=(object,))
-    def signal_request_connect_wifi(self, wifi_info: WifiInfoMessage):
-        pass
+    signal_request_camera_access = GObject.Signal(
+        'request-camera-access',
+        flags=GObject.SignalFlags.RUN_LAST,
+    )
+    request_screen_share = GObject.Signal(
+        'request-screen-share',
+        flags=GObject.SignalFlags.RUN_LAST,
+    )
+    request_screenshot = GObject.Signal(
+        'request-screenshot',
+        flags=GObject.SignalFlags.RUN_LAST,
+    )
+    poll_wifi_connection_status = GObject.Signal(
+        'poll-wifi-connection-status',
+        flags=GObject.SignalFlags.RUN_LAST,
+        arg_types=(object,),
+    )
+    request_connect_wifi = GObject.Signal(
+        'request-connect-wifi',
+        flags=GObject.SignalFlags.RUN_LAST,
+        arg_types=(object,),
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.shuttingdown = threading.Event()
 
         self.webcam_multilayout.set_layout_name(WebcamPageLayoutName.REQUESTING)
 
@@ -307,19 +314,12 @@ class ScannerPage(Adw.Bin):
         return file.get_basename() or '' if file else ''
 
     @Gtk.Template.Callback()
-    def on_mirror_switch_toggled(self, switch: Gtk.Switch, *args):
+    def on_mirror_switch_toggled(self, switch: Gtk.Switch, state: bool) -> bool:
         if not self.gst_pipeline:
-            return
-        if source := self.gst_pipeline.get_by_name(GST_SOURCE_NAME):
-            source.set_state(Gst.State.NULL)
-        self.gst_pipeline.set_state(Gst.State.NULL)
-        if flip_filter := self.gst_pipeline.get_by_name(GST_FLIP_FILTER_NAME):
-            new_method = 'none' if switch.get_active() else 'horizontal-flip'
-            flip_filter.set_property('method', new_method)
-        if self.btn_pause.get_active():
-            self.gst_pipeline.set_state(Gst.State.PAUSED)
-        else:
-            self.gst_pipeline.set_state(Gst.State.PLAYING)
+            # Revert the state
+            return True
+        GLib.idle_add(self.flip_video, self.gst_pipeline, state)
+        return False
 
     def activate_pause_button(self):
         """Activate the Pause button."""
@@ -332,19 +332,19 @@ class ScannerPage(Adw.Bin):
         if not self.gst_pipeline:
             return
         if to_pause:
-            if app_sink := self.gst_pipeline.get_by_name(GST_APP_SINK_NAME):
+            if app_sink := cast(GstApp.AppSink | None, self.gst_pipeline.get_by_name(GST_APP_SINK_NAME)):
                 app_sink.set_emit_signals(False)
             if source := self.gst_pipeline.get_by_name(GST_SOURCE_NAME):
                 source.set_state(Gst.State.PAUSED)
             return
-        # There is issue with the pipewiresrc when changing from PAUSED to PLAYING, an error is thrown:
+        # There is an issue with pipewiresrc when changing from PAUSED to PLAYING: an error is thrown:
         # "gst_caps_intersect_full: assertion 'GST_IS_CAPS (caps2)' failed".
         # So we stop the video and play again.
         source = self.gst_pipeline.get_by_name(GST_SOURCE_NAME)
         if source and source.__class__.__name__ == 'GstPipeWireSrc':
             self.stop_webcam()
         self.play_webcam()
-        if app_sink := self.gst_pipeline.get_by_name(GST_APP_SINK_NAME):
+        if app_sink := cast(GstApp.AppSink | None, self.gst_pipeline.get_by_name(GST_APP_SINK_NAME)):
             app_sink.set_emit_signals(True)
 
     @Gtk.Template.Callback()
@@ -353,12 +353,10 @@ class ScannerPage(Adw.Bin):
 
     @Gtk.Template.Callback()
     def on_btn_copy_clicked(self, button: Gtk.Button):
-        display = Gdk.Display.get_default()
-        if not display:
+        if not (display := Gdk.Display.get_default()):
             log.warning('No display available to access clipboard')
             return
-        clipboard = display.get_clipboard()
-        if not clipboard:
+        if not (clipboard := display.get_clipboard()):
             log.warning('No clipboard available on the display')
             return
         buffer = self.raw_result_display.get_buffer()
@@ -370,8 +368,7 @@ class ScannerPage(Adw.Bin):
     @Gtk.Template.Callback()
     def on_btn_filechooser_clicked(self, button: Gtk.Button):
         # We need a window for the dialog.
-        win = self.get_root()
-        if not isinstance(win, Gtk.Window):
+        if not isinstance(win := self.get_root(), Gtk.Window):
             log.warning('Root is not a window')
             return
 
@@ -380,8 +377,7 @@ class ScannerPage(Adw.Bin):
     @Gtk.Template.Callback()
     def on_webcam_device_selected(self, dropdown: Gtk.DropDown, *args):
         log.debug('Extra args for camera_dropdown callback: {}', args)
-        item = dropdown.get_selected_item()
-        if not item:
+        if not (item := dropdown.get_selected_item()):
             return
         assert isinstance(item, WebcamDeviceInfo)
         log.info('Selected device: {}', item)
@@ -419,25 +415,13 @@ class ScannerPage(Adw.Bin):
         )
         return True
 
-    def on_paste_image(self, *args):
-        display = Gdk.Display.get_default()
-        log.debug('Display: {}', display)
-        if not display:
-            return
-        clipboard = display.get_clipboard()
-        log.debug('Clipboard: {}', clipboard)
-        fmt = clipboard.get_formats()
-        log.debug('Clipboard formats: {}', fmt.get_gtypes())
-        # Try reading texture first.
-        clipboard.read_texture_async(None, self.cb_texture_read_from_clipboard)
-
     def request_camera_access(self):
         """Request camera access - emits signal for sandboxed, discovers devices otherwise."""
         log.info('Is outside sandbox: {}', self.get_property('is-outside-sandbox'))
         if self.is_outside_sandbox:
             self.discover_webcam()
         else:
-            self.emit('request-camera-access')
+            self.signal_request_camera_access.emit()
 
     def discover_webcam(self):
         """Discover webcam devices using GStreamer device monitor."""
@@ -473,12 +457,15 @@ class ScannerPage(Adw.Bin):
         flip_method = 'horizontal-flip' if self.mirror_switch.get_active() else 'none'
         # leaky=2 on the display queue prevents a stalled GL sink from back-pressuring the tee
         # and blocking the scan branch.
+        # In `appsink`, the `leaky-type` property is introduced in GStreamer 1.28 but
+        # somehow is not unrecognized in Ubuntu 26.04,
+        # so we still need to use the old `drop`.
         cmd = (
             f'pipewiresrc name={GST_SOURCE_NAME} fd={video_fd} ! '
             f'videoflip name={GST_FLIP_FILTER_NAME} method={flip_method} ! videoconvert ! tee name=t ! '
             f'queue leaky=2 ! videoscale ! {build_display_sink_desc()} '
             't. ! queue leaky=2 max-size-buffers=2 ! videoconvert ! video/x-raw,format=GRAY8 ! '
-            f'appsink name={GST_APP_SINK_NAME} max_buffers=2 drop=1'
+            f'appsink name={GST_APP_SINK_NAME} max_buffers=2 drop=1 leaky-type=2'
         )
         log.info('To build pipeline: {}', cmd)
         try:
@@ -502,11 +489,14 @@ class ScannerPage(Adw.Bin):
         source_desc = ' '.join(source_desc_parts)
         # leaky=2 on the display queue prevents a stalled GL sink from back-pressuring the tee
         # and blocking the scan branch.
+        # In `appsink`, the `leaky-type` property is introduced in GStreamer 1.28 but
+        # somehow is not unrecognized in Ubuntu 26.04,
+        # so we still need to use the old `drop`.
         cmd = (
             f'{source_desc} ! videoflip name={GST_FLIP_FILTER_NAME} method={flip_method} ! videoconvert ! tee name=t ! '
             f'queue leaky=2 ! videoscale ! {build_display_sink_desc()} '
             't. ! queue leaky=2 max-size-buffers=2 ! videoconvert ! video/x-raw,format=GRAY8 ! '
-            f'appsink name={GST_APP_SINK_NAME} max_buffers=2 drop=1'
+            f'appsink name={GST_APP_SINK_NAME} max_buffers=2 drop=1 leaky-type=2'
         )
         log.info('To build pipeline: {}', cmd)
         try:
@@ -523,8 +513,7 @@ class ScannerPage(Adw.Bin):
         if not gtk4_sink:
             # When glsinkbin wraps gtk4paintablesink, the inner element's name is not
             # discoverable via get_by_name() — retrieve it via the bin's "sink" property.
-            sink_bin = pipeline.get_by_name('sink_bin')
-            if sink_bin:
+            if sink_bin := pipeline.get_by_name('sink_bin'):
                 gtk4_sink = sink_bin.get_property('sink')
         if not gtk4_sink:
             log.error('Failed to get gtk4paintablesink element')
@@ -550,7 +539,7 @@ class ScannerPage(Adw.Bin):
             self.gst_pipeline.set_state(Gst.State.NULL)
 
     def enable_webcam_consumption(self, pipeline: Gst.Pipeline):
-        if app_sink := pipeline.get_by_name(GST_APP_SINK_NAME):
+        if app_sink := cast(GstApp.AppSink | None, pipeline.get_by_name(GST_APP_SINK_NAME)):
             log.debug('Appsink: {}', app_sink)
             app_sink.set_emit_signals(True)
             app_sink.connect('new-sample', self.on_new_webcam_sample)
@@ -558,12 +547,27 @@ class ScannerPage(Adw.Bin):
             log.warning('Appsink not found in pipeline')
 
     def disable_webcam_consumption(self, pipeline: Gst.Pipeline):
-        if app_sink := pipeline.get_by_name(GST_APP_SINK_NAME):
+        if app_sink := cast(GstApp.AppSink | None, pipeline.get_by_name(GST_APP_SINK_NAME)):
             log.debug('Appsink: {}', app_sink)
             app_sink.set_emit_signals(False)
             app_sink.disconnect_by_func(self.on_new_webcam_sample)
         else:
             log.warning('Appsink not found in pipeline')
+
+    def teardown_webcam(self):
+        """Synchronously stop the webcam and disconnect its sample callback.
+
+        Safe to call on shutdown: after this returns, no `on_new_webcam_sample`
+        callback can be running or be invoked again.
+        """
+        if not self.gst_pipeline:
+            return
+        self.disable_webcam_consumption(self.gst_pipeline)
+        # Setting NULL blocks until the streaming threads have been joined,
+        # guaranteeing no in-flight appsink callback remains.
+        self.gst_pipeline.set_state(Gst.State.NULL)
+        self.detach_gstreamer_sink()
+        self.gst_pipeline = None
 
     def play_webcam_and_enable_consumption(self, gst_pipeline: Gst.Pipeline):
         if not self.btn_pause.get_active():
@@ -779,17 +783,29 @@ class ScannerPage(Adw.Bin):
         elif not self.btn_pause.get_active():
             self.play_webcam()
 
+    def flip_video(self, pipeline: Gst.Pipeline, mirror: bool):
+        if source := pipeline.get_by_name(GST_SOURCE_NAME):
+            source.set_state(Gst.State.NULL)
+        pipeline.set_state(Gst.State.NULL)
+        if flip_filter := pipeline.get_by_name(GST_FLIP_FILTER_NAME):
+            # Ref: https://gstreamer.freedesktop.org/documentation/videofilter/videoflip.html?gi-language=c#named-constants
+            new_method = 'horizontal-flip' if mirror else 'none'
+            flip_filter.set_property('method', new_method)
+        if self.btn_pause.get_active():
+            pipeline.set_state(Gst.State.PAUSED)
+        else:
+            pipeline.set_state(Gst.State.PLAYING)
+
     def on_new_webcam_sample(self, appsink: GstApp.AppSink) -> Gst.FlowReturn:
+        if self.shuttingdown.is_set():
+            return Gst.FlowReturn.FLUSHING
         if appsink.is_eos():
             return Gst.FlowReturn.OK
-        sample = cast(Gst.Sample | None, appsink.try_pull_sample(0.5))
-        if not sample:
+        if not (sample := cast(Gst.Sample | None, appsink.try_pull_sample(1))):
             return Gst.FlowReturn.OK
-        buffer = sample.get_buffer()
-        if not buffer:
+        if not (buffer := sample.get_buffer()):
             return Gst.FlowReturn.OK
-        caps = sample.get_caps()
-        if not caps:
+        if not (caps := sample.get_caps()):
             return Gst.FlowReturn.OK
         struct = caps.get_structure(0)
         exist, width = struct.get_int('width')
@@ -800,35 +816,33 @@ class ScannerPage(Adw.Bin):
         if not exist:
             log.error('Failed to get height from caps')
             return Gst.FlowReturn.ERROR
-        success, mapinfo = buffer.map(Gst.MapFlags.READ)
-        if not success:
-            log.error('Failed to get mapinfo from Gst AppSink.')
-            return Gst.FlowReturn.ERROR
+        # The `buffer.map` API has been changed between python3-gst v1.26 and v1.28.
+        # Some runtimes (e.g. GNOME 51) ship GStreamer 1.28 C libraries but older
+        # Python overrides, so we detect the return shape at runtime instead of
+        # relying solely on Gst.VERSION_MINOR.
+        mapped = buffer.map(Gst.MapFlags.READ)
+        if isinstance(mapped, tuple):
+            success, mapinfo = cast(tuple[bool, Gst.MapInfo], mapped)
+            if not success:
+                log.error('Failed to get mapinfo from Gst AppSink.')
+                return Gst.FlowReturn.ERROR
+        else:
+            mapinfo = cast(Gst.MapInfo, mapped)
         # The documentation https://lazka.github.io/pgi-docs/#Gst-1.0/classes/MapInfo.html says that
         # the .data is a bytes, but in Ubuntu, it is a memoryview.
-        raw_bytes = mapinfo.data.tobytes() if isinstance(mapinfo.data, memoryview) else mapinfo.data
+        image_data = mapinfo.data.tobytes() if isinstance(mapinfo.data, memoryview) else mapinfo.data
         buffer.unmap(mapinfo)
+        if not image_data:
+            log.debug('Empty data from MapInfo')
+            return Gst.FlowReturn.OK
         if width <= 0 or height <= 0:
             log.warning('Invalid webcam frame dimensions: {}x{}', width, height)
             return Gst.FlowReturn.OK
         expected = width * height
-        if len(raw_bytes) < expected:
-            log.warning('Webcam frame buffer too small: {} < {}', len(raw_bytes), expected)
+        if len(image_data) < expected:
+            log.warning('Webcam frame buffer too small: {} < {}', len(image_data), expected)
             return Gst.FlowReturn.OK
-        # zbar-py expects a numpy uint8 array
-        try:
-            gray_array = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((height, width))
-        except Exception as e:
-            log.error('Webcam buffer reshape error: {}', e)
-            return Gst.FlowReturn.OK
-        results = self._safe_zbar_scan(gray_array)
-        log.info('Scanned {} symbols', len(results))
-        if not results:
-            return Gst.FlowReturn.OK
-        # Found QR code in webcam screenshot
-        # Pause video to prevent further processing.
-        self.btn_pause.set_active(True)
-        GLib.idle_add(self.display_result, results)
+        GLib.idle_add(self.decode_from_video_sample, image_data, width, height)
         return Gst.FlowReturn.OK
 
     def on_device_monitor_message(self, bus: Gst.Bus, message: Gst.Message, user_data: Any) -> bool:
@@ -867,6 +881,18 @@ class ScannerPage(Adw.Bin):
             except StopIteration:
                 pass
         return True
+
+    def receive_pasted_image(self, *args):
+        display = Gdk.Display.get_default()
+        log.debug('Display: {}', display)
+        if not display:
+            return
+        clipboard = display.get_clipboard()
+        log.debug('Clipboard: {}', clipboard)
+        fmt = clipboard.get_formats()
+        log.debug('Clipboard formats: {}', fmt.get_gtypes())
+        # Try reading texture first.
+        clipboard.read_texture_async(None, self.cb_texture_read_from_clipboard)
 
     def cb_texture_read_from_clipboard(self, clipboard: Gdk.Clipboard, result: Gio.AsyncResult):
         try:
@@ -948,12 +974,32 @@ class ScannerPage(Adw.Bin):
             return
         self.decode_from_texture(paintable)
 
+    def decode_from_video_sample(self, image_data: bytes, width: int, height: int):
+        if width <= 0 or height <= 0:
+            log.warning('Invalid frame dimensions: {}x{}', width, height)
+            return
+        if len(image_data) < width * height:
+            log.warning('Frame buffer too small: {} < {}', len(image_data), width * height)
+            return
+        try:
+            gray_array = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width))
+        except Exception as e:
+            log.error('Buffer reshape error: {}', e)
+            return
+        results = self._safe_zbar_scan(gray_array)
+        log.info('Scanned {} symbols', len(results))
+        if not results:
+            return
+        # Found QR code in webcam/screen screenshot
+        # Pause video to prevent further processing.
+        self.btn_pause.set_active(True)
+        GLib.idle_add(self.display_result, results)
+
     def decode_from_texture(self, texture: Gdk.Texture):
         w = texture.get_width()
         h = texture.get_height()
         log.info('Texture size: {}x{}', w, h)
-        img_bytes = texture.save_to_png_bytes().get_data()
-        if not img_bytes:
+        if not (img_bytes := texture.save_to_png_bytes().get_data()):
             log.debug('No image data in texture. Ignore.')
             return
         img_file = io.BytesIO(img_bytes)
@@ -982,10 +1028,9 @@ class ScannerPage(Adw.Bin):
 
     def display_result(self, symbols: list):
         # There can be more than one QR code in the image. We just pick the first.
-        # This function is called only when QR code is detected.
         if not symbols:
             return
-        sym = symbols[0]
+        sym: zbar.Symbol = symbols[0]
         log.info('QR type: {}', sym.type)
         # zbar-py returns data as bytes, decode to str
         raw_data = sym.data.decode() if isinstance(sym.data, bytes) else str(sym.data)
@@ -1008,7 +1053,7 @@ class ScannerPage(Adw.Bin):
             pass
         if wifi := parse_wifi_message(raw_data):
             log.info('Parsed wifi message: {}', wifi)
-            self.emit('poll-wifi-connection-status', wifi)
+            self.poll_wifi_connection_status.emit(wifi)
             self.scanner_state = ScannerState.WIFI_FOUND
             self.scanner_bottom_sheet.set_open(True)
             return
@@ -1061,12 +1106,11 @@ class ScannerPage(Adw.Bin):
 
     def on_wifi_connect_button_clicked(self, button: Gtk.Button, wifi_info: WifiInfoMessage):
         log.info('Connect button clicked for wifi: {}', wifi_info)
-        self.emit('request-connect-wifi', wifi_info)
+        self.request_connect_wifi.emit(wifi_info)
 
     def display_wifi_as_saved(self):
         """Set the current wifi connection status as saved."""
-        box = self.result_bin.get_child()
-        if not box:
+        if not (box := self.result_bin.get_child()):
             return
         if first_child := cast(Gtk.Widget | None, box.get_first_child()):
             if (btn := first_child.get_next_sibling()) and isinstance(btn, Gtk.Button):

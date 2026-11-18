@@ -1,75 +1,22 @@
 # Slovak translation for CoBang.
 # Copyright (C) 2025 Nguyễn Hồng Quân
 # This file is distributed under the same license as the CoBang project.
-# Jozef Gaal <preklady@mayday.sk>, 2025.
+# Jozef Gaal <preklady@mayday.sk>, 2025, 2026.
 #
 #, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: CoBang v2.2.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-30 10:52+0700\n"
-"PO-Revision-Date: 2025-11-30 11:49+0100\n"
+"POT-Creation-Date: 2026-08-25 23:04+0700\n"
+"PO-Revision-Date: 2026-08-19 00:33+0200\n"
 "Last-Translator: Jozef Gaal <preklady@mayday.sk>\n"
 "Language-Team: Jozef Gaal <preklady@mayday.sk>\n"
 "Language: sk_SK\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 3.6\n"
-
-#: src/ui/generator-qr-code-page.blp:18
-msgid "Original text"
-msgstr "Pôvodný text"
-
-#. Create a file dialog to save the image
-#: src/ui/generator-qr-code-page.blp:53 src/pages/generator_qr_code.py:72
-msgid "Save QR Code"
-msgstr "Uložiť QR kód"
-
-#: src/ui/generator-qr-code-page.blp:59
-msgid "Copy to Clipboard"
-msgstr "Kopírovať do schránky"
-
-#: src/ui/generator-qr-code-page.blp:64
-msgid "New"
-msgstr "Nový"
-
-#: src/ui/generator-starting-page.blp:25
-msgid "Generate QR Code"
-msgstr "Vygenerovať QR kód"
-
-#: src/ui/generator-starting-page.blp:33
-msgid "Enter text or URL..."
-msgstr "Zadajte text alebo URL adresu..."
-
-#: src/ui/generator-starting-page.blp:43
-msgid "Wi-Fi"
-msgstr "Wi-Fi"
-
-#: src/ui/generator-starting-page.blp:55
-msgid "Generate"
-msgstr "Vygenerovať"
-
-#: src/ui/generator-wifi-page.blp:38
-msgid "Generate QR for WiFi"
-msgstr "Vygenerovať QR kód pre WiFi"
-
-#: src/ui/generator-wifi-page.blp:44
-msgid "Search WiFi networks..."
-msgstr "Vyhľadať WiFi siete..."
-
-#: src/ui/generator-wifi-page.blp:102
-msgid "Double-click a saved Wi‑Fi network."
-msgstr "Dvakrát kliknite na uloženú sieť Wi-Fi."
-
-#: src/ui/generator-wifi-page.blp:118
-msgid "Or select it and press Enter."
-msgstr "Alebo ju vyberte a stlačte Enter."
-
-#: src/ui/generator-wifi-page.blp:127
-msgid "Back"
-msgstr "Späť"
+"X-Generator: Poedit 3.9\n"
 
 #: src/ui/scanner-page.blp:58
 msgid "Show result"
@@ -94,7 +41,8 @@ msgstr "Pozastaviť"
 
 #: src/ui/scanner-page.blp:168
 msgid "Sandboxed, webcam hardware info is not available."
-msgstr "V režime Sandbox nie sú k dispozícii informácie o hardvéri webovej kamery."
+msgstr ""
+"V režime Sandbox nie sú k dispozícii informácie o hardvéri webovej kamery."
 
 #: src/ui/scanner-page.blp:221
 msgid "Mirror"
@@ -129,18 +77,18 @@ msgid "Please open webcam or choose an image."
 msgstr "Otvorte prosím webovú kameru alebo vyberte obrázok."
 
 #: src/ui/scanner-page.blp:425
-msgid "Scanning..."
-msgstr "Skenovanie..."
+msgid "Scanning…"
+msgstr "Skenovanie…"
 
-#: src/ui/scanner-page.blp:435
+#: src/ui/scanner-page.blp:439
 msgid "No result found."
 msgstr "Nenašiel sa žiadny výsledok."
 
-#: src/ui/scanner-page.blp:457
+#: src/ui/scanner-page.blp:461
 msgid "Raw result"
 msgstr "Nespracovaný výsledok"
 
-#: src/ui/scanner-page.blp:463
+#: src/ui/scanner-page.blp:467
 msgid "Copy"
 msgstr "Kopírovať"
 
@@ -154,25 +102,9 @@ msgctxt "shortcut window"
 msgid "Quit"
 msgstr "Ukončiť"
 
-#: src/ui/wifi-display.blp:15
-msgid "SSID"
-msgstr "SSID"
-
-#: src/ui/wifi-display.blp:32
-msgid "Password"
-msgstr "Heslo"
-
-#: src/ui/wifi-display.blp:53
-msgid "Save"
-msgstr "Uložiť"
-
-#: src/ui/wifi-display.blp:58
-msgid "After saved, NetworkManager will connect automatically if in range."
-msgstr "Po uložení sa NetworkManager automaticky pripojí, ak je v dosahu."
-
 #: src/ui/window.blp:5
-msgid "CoBang: QR scanner for Linux"
-msgstr "CoBang: skener QR kódov pre Linux"
+msgid "CoBang: QR scanner"
+msgstr "CoBang: skener QR kódov"
 
 #: src/ui/window.blp:44 src/ui/window.blp:80
 msgid "Scanner"
@@ -186,28 +118,72 @@ msgstr "Generátor"
 msgid "Main Menu"
 msgstr "Hlavná ponuka"
 
-#: src/ui/window.blp:105
+#: src/ui/window.blp:107
 msgid "_Keyboard Shortcuts"
 msgstr "_Klávesové skratky"
 
-#: src/ui/window.blp:110
+#: src/ui/window.blp:112
 msgid "_About"
 msgstr "_O aplikácii"
 
-#: src/app.py:55
+#: src/app.py:56
 msgid "Support the developer"
 msgstr "Podporujte vývojára"
 
-#: src/app.py:56
+#: src/app.py:57
 #, python-format
 msgid ""
-"QR code / barcode scanner for Linux.\n"
+"QR code / barcode scanner.\n"
 "%(donate_link)s"
 msgstr ""
-"Skener QR / čiarových kódov pre Linux.\n"
+"Skener QR / čiarových kódov.\n"
 "%(donate_link)s"
 
-#: src/messages.py:48
+#: src/consts.py:55
+msgid "Text / URL"
+msgstr "Text / URL adresa"
+
+#: src/consts.py:57
+msgid "WiFi"
+msgstr "WiFi"
+
+#: src/consts.py:58
+msgid "vCard"
+msgstr "vCard"
+
+#: src/consts.py:71
+msgid "Lowest"
+msgstr "Najnižšia"
+
+#: src/consts.py:73
+msgid "Low"
+msgstr "Nízka"
+
+#: src/consts.py:75
+msgid "Medium"
+msgstr "Stredná"
+
+#: src/consts.py:76
+msgid "High"
+msgstr "Vysoká"
+
+#: src/consts.py:96
+msgid "WPA2 Personal"
+msgstr "Osobný WPA2"
+
+#: src/consts.py:100
+msgid "WPA2 Enterprise"
+msgstr "Podnikový WPA2"
+
+#: src/consts.py:102
+msgid "WPA3 Enterprise"
+msgstr "Podnikový WPA3"
+
+#: src/consts.py:103
+msgid "No Security"
+msgstr "Žiadne zabepečenie"
+
+#: src/messages.py:51
 msgid ""
 "Add an image by:\n"
 "\n"
@@ -225,35 +201,86 @@ msgstr ""
 "\n"
 "Vzdialené obrázky (http://..., sftp://...) tiež fungujú!"
 
-#. Prepare dialog for saving file
-#: src/pages/generator_qr_code.py:69
+#: src/pages/generator.py:194
 msgid "PNG Image"
 msgstr "Obrázok PNG"
 
-#: src/pages/generator_qr_code.py:119 src/pages/scanner.py:284
+#: src/pages/generator.py:195
+msgid "Save QR Code"
+msgstr "Uložiť QR kód"
+
+#: src/pages/generator.py:243 src/pages/scanner.py:298
 msgid "Copied!"
 msgstr "Skopírované!"
 
-#: src/pages/scanner.py:215
+#: src/pages/scanner.py:231
 msgid "Found a wifi configuration"
 msgstr "Našla sa wifi konfigurácia"
 
-#: src/pages/scanner.py:217
+#: src/pages/scanner.py:233
 msgid "Found a URL. Click to open:"
 msgstr "Našla sa URL adresa. Kliknutím ju otvoríte:"
 
-#: src/pages/scanner.py:219
+#: src/pages/scanner.py:235
 msgid "Found unrecognized text."
 msgstr "Našiel sa nerozpoznaný text."
 
-#: src/pages/scanner.py:220
+#: src/pages/scanner.py:236
 msgid "Unknown"
 msgstr "Neznáme"
 
-#: src/pages/scanner.py:748
+#: src/pages/scanner.py:768
 msgid "Saved"
 msgstr "Uložené"
 
 #: src/ui.py:27
 msgid "Connected"
 msgstr "Pripojené"
+
+#~ msgid "Original text"
+#~ msgstr "Pôvodný text"
+
+#~ msgid "Copy to Clipboard"
+#~ msgstr "Kopírovať do schránky"
+
+#~ msgid "New"
+#~ msgstr "Nový"
+
+#~ msgid "Generate QR Code"
+#~ msgstr "Vygenerovať QR kód"
+
+#~ msgid "Enter text or URL..."
+#~ msgstr "Zadajte text alebo URL adresu..."
+
+#~ msgid "Wi-Fi"
+#~ msgstr "Wi-Fi"
+
+#~ msgid "Generate"
+#~ msgstr "Vygenerovať"
+
+#~ msgid "Generate QR for WiFi"
+#~ msgstr "Vygenerovať QR kód pre WiFi"
+
+#~ msgid "Search WiFi networks..."
+#~ msgstr "Vyhľadať WiFi siete..."
+
+#~ msgid "Double-click a saved Wi‑Fi network."
+#~ msgstr "Dvakrát kliknite na uloženú sieť Wi-Fi."
+
+#~ msgid "Or select it and press Enter."
+#~ msgstr "Alebo ju vyberte a stlačte Enter."
+
+#~ msgid "Back"
+#~ msgstr "Späť"
+
+#~ msgid "SSID"
+#~ msgstr "SSID"
+
+#~ msgid "Password"
+#~ msgstr "Heslo"
+
+#~ msgid "Save"
+#~ msgstr "Uložiť"
+
+#~ msgid "After saved, NetworkManager will connect automatically if in range."
+#~ msgstr "Po uložení sa NetworkManager automaticky pripojí, ak je v dosahu."

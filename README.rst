@@ -79,8 +79,8 @@ Screenshots
 .. image:: https://i.imgur.com/a4KoZCg.png
 .. image:: https://i.imgur.com/AigLax4.png
 .. image:: https://i.imgur.com/Q9xwcep.png
-.. image:: https://cdn.imgchest.com/files/2e65266f6f59.png
-.. image:: https://cdn.imgchest.com/files/0edc6ec2c4aa.png
+.. image:: https://quan-images.b-cdn.net/app-screenshots/cobang/Generate-from-text-dark.png
+.. image:: https://quan-images.b-cdn.net/app-screenshots/cobang/Generate-from-wifi-light.png
 
 
 Install
@@ -176,8 +176,8 @@ However, you can still try running it in development by:
 .. code-block:: console
 
   $ meson setup __build --prefix ~/.local/
-  $ ninja -C __build
-  $ meson install -C __build
+  $ just build
+  $ just install
   $ G_MESSAGES_DEBUG=cobang cobang
 
 These steps will install CoBang to *~/.local/*. Everytime we modify source code, we only need to run the ``meson install ...`` step again.
@@ -186,7 +186,7 @@ To uninstall, do:
 
 .. code-block:: console
 
-  $ ninja -C __build uninstall
+  $ just uninstall
 
 
 Translation
@@ -247,8 +247,9 @@ You can package as Flatpak from the source.
 .. code-block:: console
 
   $ flatpak-builder _build --force-clean vn.hoabinh.quan.CoBang.yaml
-  $ flatpak-builder --run _build vn.hoabinh.quan.CoBang.yaml cobang
+  $ flatpak-builder --run --env=WAYLAND_DISPLAY=wayland-1 _build vn.hoabinh.quan.CoBang.yaml cobang
 
+You may face some problems with ``flatpak-builder --run`` as admitted `here <flatpak-builder-issue>_`_.
 
 Alternatives
 ++++++++++++
@@ -271,7 +272,7 @@ Credit
 .. [2] Ubuntu PPA requires to upload source package, not prebuilt binary. Read more at: https://help.launchpad.net/Packaging/PPA/Uploading
 
 
-.. _co_bang: https://nhipsongquehuong.com/bien-co-bang-thanh-do-thu-cong-dep-mat
+.. _co_bang: https://vietnamnet.vn/nghe-quanh-nam-ngoi-gay-tay-bien-co-dai-thanh-hang-hieu-2037215.html
 .. _Gtk: https://www.gtk.org/
 .. _GStreamer: https://gstreamer.freedesktop.org/
 .. _ZBar: https://github.com/mchehab/zbar
@@ -288,6 +289,7 @@ Credit
 .. _FlatHub: https://flathub.org/apps/details/vn.hoabinh.quan.CoBang
 .. _Decoder: https://gitlab.gnome.org/World/decoder/
 .. _Megapixels: https://git.sr.ht/~martijnbraam/megapixels
+.. _flatpak-builder-issue: https://github.com/flatpak/flatpak-builder/issues/598
 .. _author: https://quan.hoabinh.vn
 .. _lucide: https://lucide.dev/icons/image-plus
 .. _lucide_license: https://lucide.dev/license

@@ -2,9 +2,9 @@
 py_files = [
   '__init__.py',
   'generator.py',
-  'generator_starting.py',
-  'generator_qr_code.py',
-  'generator_wifi.py',
+  'generator_form.py',
+  'generator_qr_preview_pane.py',
+  'generator_wifi_network_picker.py',
   'scanner.py',
 ]
 
