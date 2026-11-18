@@ -64,6 +64,15 @@
   </kudos>
 
   <releases>
+    <release version="2.11.2" date="2026-11-18" urgency="medium">
+      <description translate="no">
+        <p>Add screen share live-feed mode via Portal ScreenCast (Wayland) or ximagesrc (X11).</p>
+        <p>Add screenshot capture via Portal Screenshot API.</p>
+        <p>Add desktop notification with click-to-focus on QR code detection.</p>
+        <p>Thread-safe zbar scanning with zbar-py 1.0.4 numpy API.</p>
+        <p>Fix SIGFPE and heap corruption crashes in concurrent scanning.</p>
+      </description>
+    </release>
     <release version="2.11.1" date="2026-10-25" urgency="medium">
       <description translate="no">
         <p>No need to build libportal in Flatpak.</p>
